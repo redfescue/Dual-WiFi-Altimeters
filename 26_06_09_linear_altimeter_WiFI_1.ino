@@ -20,15 +20,11 @@ const char* weatherHost = "api.openweathermap.org";
 
 #define LIN 10 //PWM for linear slider
 
-// try different method 
-//int LinMin = 820; //pulse width for zero feet on slider
-//int LinMax = 2150; //pulse witdth for 500 feet on slider
-
-
-
+// Calibration values
+int LinMin = 900;   //pulse width for zero feet on slider
+int LinMax = 2100;  //pulse width for 500 feet on slider
 
 float barometricPressure = 30.02;  //will be updated from API (in-Hg)
-
 
 int LinPW = 900;
 int i = 0;            //for counting the servo pulses
@@ -37,8 +33,7 @@ int c = 1;            //for counting the slider calibration cycles
 Adafruit_BMP280 bmp;  // I2C
 int HEIGHT;
 
-//float R;  //for linear slider
-//int LinPW;
+bool calibrationDone = false;  // Track if calibration has run
 
 unsigned long lastWeatherUpdate = 0;
 const unsigned long WEATHER_UPDATE_INTERVAL = 600000;  // 10 minutes - 60 sec now
@@ -81,7 +76,6 @@ void loop() {
   //Fetch updated barometric pressure every 10 minutes
   if (millis() - lastWeatherUpdate > WEATHER_UPDATE_INTERVAL) {
     fetchWeatherData();
- // } 
     lastWeatherUpdate = millis();
   }
 
@@ -104,70 +98,51 @@ void loop() {
   Serial.println(" feet");
 
   Serial.println();
-  delay(1000);
 
   HEIGHT = (bmp.readAltitude(barometricPressure * 33.86)) * 3.2808;  //height in feet
 
+  // Run calibration sequence only once at startup
+  if (!calibrationDone) {
+    Serial.println(F("\n=== CALIBRATION SEQUENCE ===\n"));
+    
+    runPulseSequence(LinMin, 400, "zero feet");
+    delay(1000);
 
+    runPulseSequence(LinMax, 400, "500 feet");
+    delay(1000);
 
+    calibrationDone = true;
+    Serial.println(F("=== CALIBRATION COMPLETE ===\n"));
+  }
 
+  // Continuously update altitude position
+  Serial.println(F(" to altitude"));
+  LinPW = LinMin + ((LinMax - LinMin) * HEIGHT / 500.0);  // Linear interpolation
+  if (LinPW > LinMax) {LinPW = LinMax;}
+  if (LinPW < LinMin) {LinPW = LinMin;}
+  
+  Serial.print(F("Pulse Width: "));
+  Serial.println(LinPW);
+  Serial.println("");
 
-
-//***********************************drive for linear servo
-
-
-
-Serial.println(" to zero feet");
-//linear slider to zero feet
-for (i= 0; i < 400; i++) { 
-
-digitalWrite(LIN, HIGH); //start servo pulse
-delayMicroseconds(900);  //use to calibrate for zero feet
-digitalWrite(LIN, LOW);
-delay(20);
-}
-
-delay(1000);
-
-Serial.println(" to 500 feet");
-
-//linear slider to 500 feet
-for (i= 0; i < 400; i++) { 
-digitalWrite(LIN, HIGH); // calibrate to 500 ft 
-delayMicroseconds(2100); 
-digitalWrite(LIN, LOW);
-delay(20);
-}
-
-
-
-delay(1000);
-                                                                                                                                                                                              
-//R= (LinMax-LinMin)/500;
-//LinPW = HEIGHT*R + LinMin;
-//if (LinPW > LinMax) {LinPW = LinMax;}
-
-Serial.println(LinPW);
-Serial.println("Lin PW");
-
-Serial.println(" to altitude");
-Serial.println("");
-
-
-//slider position for altitude
-for (i= 0; i < 400; i++) { 
-
-digitalWrite(LIN, HIGH); //start servo pulse
-delayMicroseconds(900 + HEIGHT * 2.39);  //altitude
-digitalWrite(LIN, LOW);
-delay(20);
-}
-
-delay(2000);
+  runPulseSequence(LinPW, 400, "altitude");
+  
+  delay(2000);
 
 }   
 
 //******************************************************************* functions
+
+void runPulseSequence(int pw, int pulseCount, const char* label) {
+  Serial.print(F(" to "));
+  Serial.println(label);
+  for (i = 0; i < pulseCount; i++) {
+    digitalWrite(LIN, HIGH);
+    delayMicroseconds(pw);
+    digitalWrite(LIN, LOW);
+    delay(20);
+  }
+}
 
 void connectToWiFi() {
   Serial.print(F("Connecting to WiFi: "));
